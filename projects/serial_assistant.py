@@ -33,6 +33,12 @@ class SerialAssistant(QMainWindow):
         h_layout1.addWidget(QLabel('波特率:'))
         h_layout1.addWidget(self.baud_combo)
         h_layout1.addWidget(self.open_btn)
+        # 添加协议选择下拉框
+        self.protocol_combo = QComboBox()
+        self.protocol_combo.addItems(['透明传输', '简单问答协议(演示)', 'Modbus RTU (预留)'])
+        h_layout1.addWidget(QLabel('协议：'))
+        h_layout1.addWidget(self.protocol_combo)
+
         h_layout1.addStretch()
         layout.addLayout(h_layout1)
 
@@ -84,12 +90,41 @@ class SerialAssistant(QMainWindow):
         if self.ser is None or not self.ser.is_open:
             self.recv_text.append('请先打开串口')
             return
-        data = self.send_edit.toPlainText()
-        if data:
-            self.ser.write(data.encode('utf-8'))
-            self.recv_text.append(f'发送: {data}')
-            self.send_edit.clear()
 
+        protocol = self.protocol_combo.currentText()
+        raw_data = self.send_edit.toPlainText().strip()
+
+        if not raw_data:
+            return
+
+        if protocol == '透明传输':
+            send_bytes = raw_data.encode('utf-8')
+            self.recv_text.append(f'发送(透明): {raw_data}')
+
+        elif protocol == '简单问答协议(演示)':
+            # 自定义协议：输入 GET_TEMP 返回模拟温度
+            if raw_data == 'GET_TEMP':
+                send_bytes = b'\x01\x03\x00\x00\x00\x01\x84\x0A'  # 示例Modbus读温度
+                self.recv_text.append('[协议] 发送读取温度指令')
+                # 模拟接收回复（实际应该在线程中读串口，这里简化演示）
+                from threading import Timer
+                def fake_reply():
+                    self.recv_text.append('[模拟回复] 温度: 25.6°C')
+
+                Timer(0.2, fake_reply).start()
+            elif raw_data == 'GET_STATUS':
+                send_bytes = b'\x01\x03\x00\x01\x00\x01\xD5\xCA'
+                self.recv_text.append('[协议] 发送读取状态指令')
+                Timer(0.2, lambda: self.recv_text.append('[模拟回复] 状态: 正常')).start()
+            else:
+                self.recv_text.append('[协议] 未知命令，可用: GET_TEMP, GET_STATUS')
+                return
+        else:  # Modbus预留或其他
+            send_bytes = raw_data.encode('utf-8')
+            self.recv_text.append(f'发送(默认): {raw_data}')
+
+        self.ser.write(send_bytes)
+        self.send_edit.clear()
     def closeEvent(self, event):
         if self.ser and self.ser.is_open:
             self.ser.close()
